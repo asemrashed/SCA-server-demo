@@ -1,0 +1,65 @@
+import { z } from 'zod'
+import { OrderStatus, ProductType } from '../enums.js'
+
+const productSlugSchema = z
+  .string()
+  .min(1)
+  .max(120)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'slug must be lowercase kebab-case')
+
+export const createProductSchema = z.object({
+  title: z.string().min(1).max(200),
+  slug: productSlugSchema.optional(),
+  description: z.string().max(5000).optional().nullable(),
+  thumbnail: z.string().url().optional().nullable(),
+  type: z.nativeEnum(ProductType).default(ProductType.BOOK),
+  priceMinor: z.number().int().min(0).default(0),
+  stock: z.number().int().min(0).optional().nullable(),
+  isPublished: z.boolean().default(false),
+  digitalUrl: z.string().url().optional().nullable(),
+  freePreviewPages: z.number().min(0).max(100).default(0.5),
+})
+
+export const updateProductSchema = createProductSchema.partial().extend({
+  slug: productSlugSchema.optional(),
+})
+
+export const productListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  search: z.string().optional(),
+  type: z.nativeEnum(ProductType).optional(),
+  sort: z.string().optional(),
+  dateFrom: z.string().datetime().optional(),
+  dateTo: z.string().datetime().optional(),
+})
+
+export const orderItemInputSchema = z.object({
+  productId: z.string().min(1),
+  quantity: z.number().int().min(1).max(99),
+})
+
+export const createOrderSchema = z.object({
+  items: z.array(orderItemInputSchema).min(1),
+})
+
+export const listAdminOrdersQuerySchema = z.object({
+  status: z.nativeEnum(OrderStatus).optional(),
+})
+
+export const reviewOrderSchema = z.object({
+  action: z.enum(['confirm', 'cancel']),
+})
+
+export const grantManualProductAccessSchema = z.object({
+  studentId: z.string().min(1),
+  productIds: z.array(z.string().min(1)).min(1),
+})
+
+export const listStudentProductAccessQuerySchema = z.object({
+  studentId: z.string().min(1),
+})
+
+export const updateProductAccessSchema = z.object({
+  action: z.enum(['block', 'unblock', 'withdraw']),
+})

@@ -1,0 +1,56 @@
+{
+  "name": "sca-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "prisma generate && tsc",
+    "build:vercel": "prisma migrate deploy && prisma generate && tsc",
+    "postinstall": "prisma generate",
+    "start": "node dist/index.js",
+    "lint": "eslint src",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:cloudinary-to-local": "tsx prisma/scripts/migrate-cloudinary-to-local.ts",
+    "db:backfill-student-ids": "tsx prisma/scripts/backfill-student-id-numbers.ts",
+    "db:migrate-user-ids": "tsx prisma/scripts/migrate-id-number-to-user.ts",
+    "db:test": "tsx prisma/scripts/test-db-connection.ts",
+    "db:push": "prisma db push",
+    "db:seed": "tsx prisma/seed.ts",
+    "backup": "bash deploy/backup.sh",
+    "backup:install-cron": "bash deploy/install-backup-cron.sh",
+    "restore": "bash deploy/restore.sh",
+    "test": "node --import tsx --test src/modules/monthly-payment/monthly-payment.utils.test.ts"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.9.0",
+    "argon2": "^0.44.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^17.4.2",
+    "express": "^4.21.2",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "multer": "^2.1.1",
+    "nodemailer": "^9.0.3",
+    "pdf-lib": "^1.17.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.8",
+    "@types/cors": "^2.8.18",
+    "@types/express": "^5.0.2",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/multer": "^2.1.0",
+    "@types/node": "^22",
+    "@types/nodemailer": "^8.0.1",
+    "prisma": "^6.9.0",
+    "tsx": "^4.19.4",
+    "typescript": "5.7.3"
+  }
+}
