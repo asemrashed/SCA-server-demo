@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { publicUploadBaseUrl, uploadDir } from '../config/env.js'
+import { v2 as cloudinary } from 'cloudinary'
+import { cloudinaryConfig, publicUploadBaseUrl, storageProvider, uploadDir } from '../config/env.js'
 
 export interface StorageUploadResult {
   url: string
@@ -13,6 +14,10 @@ export interface StorageClient {
   getSignedUrl(key: string, expiresInSeconds?: number): Promise<string>
 }
 
+function normalizeStorageKey(key: string): string {
+  return key.replace(/^\/+/, '').replace(/\\/g, '/').replace(/\.\./g, '')
+}
+
 class LocalStorage implements StorageClient {
   private readonly root: string
   private readonly baseUrl: string
@@ -23,12 +28,12 @@ class LocalStorage implements StorageClient {
   }
 
   private filePath(key: string): string {
-    const normalized = key.replace(/^\/+/, '').replace(/\.\./g, '')
+    const normalized = normalizeStorageKey(key)
     return path.join(this.root, normalized)
   }
 
   private publicUrl(key: string): string {
-    const normalized = key.replace(/^\/+/, '')
+    const normalized = normalizeStorageKey(key)
     return `${this.baseUrl}/${normalized.split('/').map(encodeURIComponent).join('/')}`
   }
 
@@ -52,18 +57,73 @@ class LocalStorage implements StorageClient {
   }
 }
 
-export const storage: StorageClient = new LocalStorage(uploadDir(), publicUploadBaseUrl())
+class CloudinaryStorage implements StorageClient {
+  async upload(key: string, data: Buffer, contentType: string): Promise<StorageUploadResult> {
+    const normalized = normalizeStorageKey(key)
+    const folder = normalized.includes('/') ? normalized.slice(0, normalized.lastIndexOf('/')) : undefined
+    const publicId = normalized.includes('/') ? normalized.slice(normalized.lastIndexOf('/') + 1) : normalized
+    const resourceType = contentType.startsWith('video/') ? 'video' : contentType.startsWith('image/') ? 'image' : 'auto'
+
+    const result = await new Promise<any>((resolve, reject) => {
+      const uploadStream = cloudinary.uploader.upload_stream(
+        {
+          folder,
+          public_id: publicId.replace(/\.[^/.]+$/, ''),
+          resource_type: resourceType,
+          overwrite: false,
+          unique_filename: true,
+          type: 'upload',
+        },
+        (error, uploaded) => {
+          if (error) return reject(error)
+          resolve(uploaded)
+        },
+      )
+
+      uploadStream.end(data)
+    })
+
+    return {
+      url: result.secure_url ?? result.url,
+      key: result.public_id ?? normalized,
+    }
+  }
+
+  async delete(key: string): Promise<void> {
+    await cloudinary.uploader.destroy(normalizeStorageKey(key))
+  }
+
+  async getSignedUrl(key: string, _expiresInSeconds = 3600): Promise<string> {
+    return cloudinary.url(normalizeStorageKey(key), { secure: true, type: 'upload' })
+  }
+}
+
+function buildStorage(): StorageClient {
+  if (storageProvider() === 'cloudinary') {
+    cloudinary.config(cloudinaryConfig())
+    return new CloudinaryStorage()
+  }
+
+  return new LocalStorage(uploadDir(), publicUploadBaseUrl())
+}
+
+export const storage: StorageClient = buildStorage()
 
 /** Public URL for a storage key under UPLOAD_DIR. */
 export function publicUrlForKey(key: string): string {
-  const normalized = key.replace(/^\/+/, '').replace(/\.\./g, '')
+  const normalized = normalizeStorageKey(key)
+
+  if (storageProvider() === 'cloudinary') {
+    return cloudinary.url(normalized, { secure: true, type: 'upload' })
+  }
+
   const base = publicUploadBaseUrl()
   return `${base}/${normalized.split('/').map(encodeURIComponent).join('/')}`
 }
 
 /** Absolute path for a storage key. */
 export function absolutePathForKey(key: string): string {
-  const normalized = key.replace(/^\/+/, '').replace(/\.\./g, '')
+  const normalized = normalizeStorageKey(key)
   return path.join(uploadDir(), normalized)
 }
 

@@ -1,6 +1,8 @@
 import path from 'node:path'
 import { z } from 'zod'
 
+const storageProviderSchema = z.enum(['cloudinary', 'vps']).default('cloudinary')
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(4000),
@@ -13,6 +15,7 @@ const envSchema = z.object({
   /** Refresh TTL when login omits remember / remember: false. */
   JWT_REFRESH_SESSION_EXPIRES_IN: z.string().default('1d'),
   CORS_ORIGIN: z.string().min(1),
+  STORAGE_PROVIDER: storageProviderSchema,
   ADMIN_WHATSAPP_PHONE: z.string().min(10).optional(),
   /** Frontend base URL for password-reset links (no trailing slash). */
   CLIENT_URL: z.string().url().default('http://localhost:3000'),
@@ -28,6 +31,10 @@ const envSchema = z.object({
   PLATFORM_NAME: z.string().default('SCA'),
   /** Absolute or relative path where uploaded files are stored on disk. */
   UPLOAD_DIR: z.string().default('./uploads'),
+  /** Cloudinary credentials used when STORAGE_PROVIDER=cloudinary. */
+  CLOUDINARY_CLOUD_NAME: z.string().min(1).optional(),
+  CLOUDINARY_API_KEY: z.string().min(1).optional(),
+  CLOUDINARY_API_SECRET: z.string().min(1).optional(),
   /**
    * Public base URL for uploaded files (no trailing slash).
    * e.g. https://api.sharifcommerceacademy.com/uploads
@@ -36,6 +43,26 @@ const envSchema = z.object({
 })
 
 export type Env = z.infer<typeof envSchema>
+export type StorageProvider = z.infer<typeof storageProviderSchema>
+
+export function validateStorageEnv(data: Partial<Env>): void {
+  const storageProvider = data.STORAGE_PROVIDER ?? 'cloudinary'
+
+  if (storageProvider === 'cloudinary') {
+    const missing = ['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET']
+      .filter((key) => !data[key as keyof typeof data])
+
+    if (missing.length > 0) {
+      throw new Error(
+        `Invalid environment: ${missing.join(', ')} is required when STORAGE_PROVIDER=cloudinary`,
+      )
+    }
+  }
+
+  if (data.NODE_ENV === 'production' && storageProvider === 'vps' && !data.PUBLIC_UPLOAD_BASE_URL) {
+    throw new Error('Invalid environment: PUBLIC_UPLOAD_BASE_URL is required in production when STORAGE_PROVIDER=vps')
+  }
+}
 
 function loadEnv(): Env {
   const parsed = envSchema.safeParse(process.env)
@@ -44,9 +71,7 @@ function loadEnv(): Env {
     throw new Error(`Invalid environment: ${issues}`)
   }
   const data = parsed.data
-  if (data.NODE_ENV === 'production' && !data.PUBLIC_UPLOAD_BASE_URL) {
-    throw new Error('Invalid environment: PUBLIC_UPLOAD_BASE_URL is required in production')
-  }
+  validateStorageEnv(data)
   return data
 }
 
@@ -71,7 +96,29 @@ export function publicUploadBaseUrl(): string {
   if (env.PUBLIC_UPLOAD_BASE_URL) {
     return env.PUBLIC_UPLOAD_BASE_URL.replace(/\/$/, '')
   }
+
+  if (env.STORAGE_PROVIDER === 'cloudinary' && env.CLOUDINARY_CLOUD_NAME) {
+    return `https://res.cloudinary.com/${env.CLOUDINARY_CLOUD_NAME}`
+  }
+
   return `http://localhost:${env.PORT}/uploads`
+}
+
+export function storageProvider(): StorageProvider {
+  return env.STORAGE_PROVIDER
+}
+
+export function cloudinaryConfig() {
+  if (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET) {
+    throw new Error('Invalid environment: Cloudinary credentials are required when STORAGE_PROVIDER=cloudinary')
+  }
+
+  return {
+    cloud_name: env.CLOUDINARY_CLOUD_NAME,
+    api_key: env.CLOUDINARY_API_KEY,
+    api_secret: env.CLOUDINARY_API_SECRET,
+    secure: true,
+  }
 }
 
 /** Admin WhatsApp number for manual monthly fee requests (digits only, BD format). */

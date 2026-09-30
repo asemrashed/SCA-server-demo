@@ -2,12 +2,17 @@ import fs from 'node:fs'
 import path from 'node:path'
 import multer from 'multer'
 import { MAX_UPLOAD_BYTES } from '../../shared/constants.js'
-import { uploadDir } from '../../config/env.js'
+import { storageProvider, uploadDir } from '../../config/env.js'
 
 const ALLOWED_FOLDERS = new Set(['images', 'videos', 'documents', 'files'])
 
-function safeFilename(originalname: string): string {
+export function safeFilename(originalname: string): string {
   return originalname.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120)
+}
+
+export function buildUploadKey(folder: string, originalname: string): string {
+  const normalizedFolder = ALLOWED_FOLDERS.has(folder) ? folder : 'files'
+  return `${normalizedFolder}/${Date.now()}-${safeFilename(originalname)}`
 }
 
 const diskStorage = multer.diskStorage({
@@ -24,6 +29,6 @@ const diskStorage = multer.diskStorage({
 })
 
 export const uploadMiddleware = multer({
-  storage: diskStorage,
+  storage: storageProvider() === 'cloudinary' ? multer.memoryStorage() : diskStorage,
   limits: { fileSize: MAX_UPLOAD_BYTES },
 })

@@ -1,10 +1,11 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { Request, Response, NextFunction } from 'express'
-import { uploadDir } from '../../config/env.js'
+import { storageProvider, uploadDir } from '../../config/env.js'
 import { validationError } from '../../lib/errors.js'
-import { publicUrlForKey } from '../../lib/storage.js'
+import { publicUrlForKey, storage } from '../../lib/storage.js'
 import { maxBytesForUploadFolder } from '../../shared/constants.js'
+import { buildUploadKey } from './upload.multer.js'
 
 const ALLOWED_FOLDERS = new Set(['images', 'videos', 'documents', 'files'])
 
@@ -24,23 +25,35 @@ export async function uploadFile(req: Request, res: Response, next: NextFunction
       throw validationError('No file provided')
     }
 
-    const key = keyFromSavedPath(file.path)
-    const folder = key.split('/')[0] ?? 'files'
+    const folder = String(req.body?.folder ?? 'files')
     if (!ALLOWED_FOLDERS.has(folder)) {
-      await fs.unlink(file.path).catch(() => {})
+      if (file.path) await fs.unlink(file.path).catch(() => {})
       throw validationError('Invalid upload folder')
     }
 
     const maxBytes = maxBytesForUploadFolder(folder)
     if (file.size > maxBytes) {
-      await fs.unlink(file.path).catch(() => {})
+      if (file.path) await fs.unlink(file.path).catch(() => {})
       const maxMb = Math.round(maxBytes / (1024 * 1024))
       throw validationError(`File too large. Maximum upload size for ${folder} is ${maxMb} MB.`)
     }
 
+    let key: string
+    let url: string
+
+    if (storageProvider() === 'cloudinary') {
+      key = buildUploadKey(folder, file.originalname)
+      const uploaded = await storage.upload(key, file.buffer, file.mimetype)
+      url = uploaded.url
+      key = uploaded.key
+    } else {
+      key = keyFromSavedPath(file.path)
+      url = publicUrlForKey(key)
+    }
+
     res.status(201).json({
       data: {
-        url: publicUrlForKey(key),
+        url,
         key,
         originalName: file.originalname,
         mimeType: file.mimetype,
